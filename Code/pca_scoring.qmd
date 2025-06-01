@@ -7,11 +7,13 @@ editor: visual
 ## Preliminaries
 
 Import libraries.
-```{r, message=FALSE}
+
+```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 ```
 
 Import reviewer-review level data.
+
 ```{r}
 # this is a big data set! This takes a minute or two
 # we are subsetting this to speed up initial computations
@@ -21,28 +23,50 @@ review <- read_csv("../Data/final_modeling_df.csv") |> slice(1:1000000)
 ## Data Cleaning + Visualization
 
 Check summary statistics.
+
 ```{r}
 summary(review)
 ```
 
-Most of the NA values are coming from product attributes.
+Compute the sum of `NA` values in each column. Most of the NA values are coming from product attributes.
+
 ```{r}
 apply(review, 2, function(x) sum(is.na(x)))
 ```
 
 Filter out rows with missing values for now, we'll deal with this later.
+
 ```{r}
 review <- review |>
   filter(if_all(everything(), ~!is.na(.)))
 ```
 
-Visualize feature distributions for some reviewer-level characteristics.
+View the data. Some variables are reviewer-level (they have the same value across all reviewer-specific observations) and some are review-level.
+
 ```{r}
 review |>
   arrange(user_id)
 ```
 
-Select user-level variables and pivot to long format.
+TEMP - COME BACK TO PRODUCT ATTRIBUTES
+```{r}
+# review |>
+#   separate(product_attributes)
+```
+
+Compute summaries of review-level variables for each reviewer.
+
+```{r}
+review <- review |>
+  group_by(user_id) |>
+  mutate(# compute the average length of reviews written by a given reviewer
+         avg_review_length = mean(review_length),
+         # compute the proportion of positive reviews written by a given reviewer
+         avg_sentiment = mean(sentiment == "POSITIVE"))
+```
+
+Select reviewer-level variables and pivot to long format.
+
 ```{r}
 # create data frame with user-level variables and ID
 review_user <- review |>
@@ -54,6 +78,8 @@ review_user <- review |>
          funny_user,
          cool_user,
          star_rating_variance,
+         avg_review_length,
+         avg_sentiment,
          account_age_days,
          average_stars)
 
@@ -61,16 +87,69 @@ long_user <- review_user |>
   pivot_longer(names_to="Feature", values_to="Value", -user_id)
 ```
 
-Visualize feature distributions. Some users have really extreme values for the votes, like 'cool', 'funny', and 'useful'. Review count and frequency are also strongly right-skewed.
-```{r fig.width=9, fig.height=7}
+The reviewer-level attributes selected are:
+
+Reviewer Activity:
+* [active_days]: Max(review_date) - min(review_date)
+* [review_count]: number of reviews a user has written
+* [review_frequency]: review_count / active_days
+
+Review Quality:
+* [review_length]: Number of words in a review 
+* Use of specific details (e.g., product attributes) 
+        	* [product_attributes]: used nn model to extract relevant nouns and adjectives 
+* Presence of extreme language (polarized sentiment) 
+        	* [sentiment]: used a nn model to extract positive/negative split
+        	* [sentiment score]: probability/strength of the sentiment being predicted correctly
+ 
+Engagement Metrics:
+* Number of helpful votes or likes [useful_user, funny_user, cool_user, useful_review, funny_review, cool_review]
+* Number of reported/spammed reviews [base data not provided]
+ 
+Reviewer Consistency:
+* Variance in star ratings given by the reviewer 
+        	* [star_rating_variance]: calculate variance from stars across a user 
+* Alignment of their ratings with overall product sentiment [need assistance with this one]
+ 
+Historical Behavior:
+* Account age and tenure on the platform 
+        	* [account_age_days]: max date that exists in the dataset - yelping_since
+* Whether reviews have been flagged or removed for violating guidelines (base data not provided)
+           
+Other useful attributes:  
+        	* user_id, review_id, business_id, text, stars, date, average_stars
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Visualize feature distributions for reviewer-level characteristics. Some users have really extreme values for the votes like 'cool', 'funny', and 'useful'. Review count and frequency are also strongly right-skewed.
+
+```{r fig.width=7, fig.height=5}
 long_user |>
   ggplot(aes(x=Value)) +
   geom_density() +
   facet_wrap(~Feature, scales='free')
 ```
 
-Use a log transformation to help with skewness. Use an offset of one for variables that can have a value of zero.
+Use a log transformation to address the skewness. Use an offset of one for all transformed variables.
+
 ```{r}
+# note that we are not transforming account_age_days and average_stars since these are not strongly skewed to begin with
 review_user_log <- review_user %>%
   mutate(across(
     .cols = where(is.numeric) & !all_of(c("account_age_days", "average_stars")),
@@ -78,14 +157,16 @@ review_user_log <- review_user %>%
   ))
 ```
 
-Redefine `long_user`.
+Redefine `long_user` using the log-transformed data.
+
 ```{r}
 long_user <- review_user_log |>
   pivot_longer(names_to="Feature", values_to="Value", -user_id)
 ```
 
-Plot feature distributions again. They are slightly improved, but we will probably need to address this with a more robust method later.
-```{r fig.width=9, fig.height=7}
+Plot feature distributions again. They are slightly improved, but we will probably need to address this with a more robust method later. Maybe box-cox?
+
+```{r fig.width=7, fig.height=5}
 long_user |>
   ggplot(aes(x=Value)) +
   geom_density() +
@@ -95,23 +176,28 @@ long_user |>
 ## PCA
 
 Compute principal components. We center and scale all features to weight them equally.
+
 ```{r}
+# the -1 column subset excludes the user ID
 pca <- prcomp(review_user_log[, -1], center=TRUE, scale=TRUE)
 ```
 
 View PCA results. Three eigenvectors have eigenvalues greater than 1 (rule of thumb) and three components are able to explain 82% of the variance of the data, which is pretty high for only three components.
+
 ```{r}
 summary(pca)
 ```
 
 View the first three eigenvectors.
 
-- E1: The only variable with a positive loading is `review_frequency`. Someone who leaves very frequent reviews will have a more positive value for PC1. However, the `review_count` and community indications of review quality, i.e., `useful_user`, `funny_user`, and `cool_user` all have large negative loadings. So, someone with a large number of reviews that have received favorable feedback from the community will have a large negative value for PC1, especially if their review frequency is low. This seems pretty interesting because PC1 on its own may be a decent differentiator of reviewer quality/trust - a bot that leaves a large number of reviews but does so with high frequency will not have a very negative value for PC1 especially if those bot reviews don't receive positive community feedback. Keep in mind that since we scaled the data, the values of the variables are standard deviations, which incorporate information for each user relative to other users, i.e., it's not just about having a high amount of positive community feedback or a high review count, it's about having high amounts relative to the rest of the user population.
+-   E1: The only variable with a positive loading is `review_frequency`. Someone who leaves very frequent reviews will have a more positive value for PC1. However, the `review_count` and community indications of review quality, i.e., `useful_user`, `funny_user`, and `cool_user` all have large negative loadings. So, someone with a large number of reviews that have received favorable feedback from the community will have a large negative value for PC1, especially if their review frequency is low. This seems pretty interesting because PC1 on its own may be a decent differentiator of reviewer quality/trust - a bot that leaves a large number of reviews but does so with high frequency will not have a very negative value for PC1 especially if those bot reviews don't receive positive community feedback. Keep in mind that since we scaled the data, the values of the variables are standard deviations, which incorporate information for each user relative to other users, i.e., it's not just about having a high amount of positive community feedback or a high review count, it's about having high amounts relative to the rest of the user population.
+
 ```{r}
 pca$rotation[, 1:3]
 ```
 
 Plot the distribution of PC1.
+
 ```{r}
 as_tibble(pca$x[, 1]) |>
   ggplot(aes(x = value)) +
@@ -119,11 +205,13 @@ as_tibble(pca$x[, 1]) |>
 ```
 
 Transform to 0 to 1 scale.
+
 ```{r}
 trust_scores <- exp(pca$x[, 1])/(1 + exp(pca$x[, 1]))
 ```
 
 Plot trust scores.
+
 ```{r}
 tibble(score = trust_scores) |>
   ggplot(aes(x = score)) +
@@ -131,6 +219,7 @@ tibble(score = trust_scores) |>
 ```
 
 What do some of the people look like at either end of this distribution?
+
 ```{r}
 # add trust score variable to user level data
 review_user <- review_user |>
@@ -138,16 +227,14 @@ review_user <- review_user |>
 ```
 
 Top 5 trustworthy users.
+
 ```{r}
 review_user |>
   top_n(trust_score, 5)
 ```
 
 Top 5 untrustworthy users.
+
 ```{r}
 
 ```
-
-
-
-
