@@ -1,0 +1,234 @@
+---
+title: "Trust Badge Study Results"
+author: "Cameron Bale"
+date: "2025-09-23"
+output: 
+  github_document:
+    toc: true
+---
+
+Import libraries.
+
+```{r}
+library(tidyverse)
+```
+
+Import data.
+
+```{r}
+survey <- read_csv("../Data/trust_badge_study.csv")
+```
+
+## Lots of Data Cleaning
+
+Remove first two rows which contain question text and descriptions.
+
+```{r}
+survey <- survey |>
+  slice(-c(1:2))
+```
+
+Remove our test responses (i.e., only keep observations with a Prolific ID).
+
+```{r}
+survey <- survey |>
+  filter(!is.na(PROLIFIC_PID))
+```
+
+Remove participants that failed the attention check of whether the reviewer was verified.
+
+```{r}
+survey <- survey |>
+  # remove those who said they can't remember verification status
+  filter(QID11 != "I can't remember") |>
+  # create binary variable for reponse to question of whether reviewer was verified
+  # then convert treatment group indicator to numeric variable
+  # then compare treatment group assignment to binary response variable, pass if they match
+  mutate(manipulation_check_binary = if_else(QID11 == "Yes", 1, 0),
+         Treat = as.numeric(Treat),                                 
+         passed_manipulation_check = if_else(Treat == manipulation_check_binary, 1, 0)) |>
+  filter(passed_manipulation_check == 1)
+```
+
+Check survey completion time. Remove participants who took less than 90 seconds to complete.
+
+```{r}
+survey <- survey |>
+  filter(`Duration (in seconds)` < 90)
+```
+
+Create numeric versions of Likert scale questions. We'll use the function below, and apply it to the `Q10_*` questions.
+
+```{r}
+likert_converter <- function(x){
+  factor_x <- factor(x, levels = c("Strongly disagree", "Disagree", "Somewhat disagree", "Neither agree nor disagree", "Somewhat agree", "Agree", "Strongly agree"))
+  numeric_x <- as.numeric(factor_x)
+  return(numeric_x)
+}
+```
+
+Check alignment of factor levels and numeric values. `Strongly disagree` = 1, and `Strongly agree` = 7.
+
+```{r}
+# factor(survey$QID10_1, levels = c("Strongly disagree", "Disagree", "Somewhat disagree", "Neither agree nor disagree", "Somewhat agree", "Agree", "Strongly agree"))
+# likert_converter(survey$QID10_1)
+```
+
+Perform conversion.
+
+```{r}
+survey <- survey |>
+  mutate(across(c("QID10_1", "QID10_2", "QID10_3", "QID10_4", "QID10_5"), likert_converter))
+```
+
+Rename Likert scale questions.
+
+```{r}
+survey <- survey |>
+  rename("purchase" = "QID10_1",
+         "helpful" = "QID10_2",
+         "review_trust" = "QID10_3",
+         "reviewer_trust" = "QID10_4",
+         "platform_trust" = "QID10_5")
+```
+
+Check for text responses to demographic questions.
+
+```{r}
+# no one entered additional sex identifier
+survey |>
+  filter(!is.na(Q47_4_TEXT))
+
+# a few people entered additional ethnicity values
+# excluding the person who said test
+survey |>
+  filter(!is.na(QID1219256734_6_TEXT))
+```
+
+Excluding the person who answered `test` to the ethnicity question.
+
+```{r}
+survey <- survey |>
+  filter(is.na(QID1219256734_6_TEXT) | QID1219256734_6_TEXT != "test")
+```
+
+Renaming demographic questions.
+
+```{r}
+survey <- survey |>
+  rename("education" = "QID1219256731",
+         "ethnicity" = "QID1219256734",
+         "num_online_purchase" = "QID39",
+         "age_group" = "Q46",
+         "sex" = "Q47",
+         "income" = "Q48")
+```
+
+Convert number of online purchases to numeric and age group to a factor.
+
+```{r}
+survey <- survey |>
+  mutate(num_online_purchase = as.numeric(factor(num_online_purchase, levels = c("1", "2", "3", "4", "5 or more"))),
+         age_group = factor(age_group, levels = c("18-24 years old", "25-34 years old", "35-44 years old", "45-54 years old", "55-64 years old", "65+ years old")))
+```
+
+Check how many participants we have in each experimental condition.
+
+```{r}
+survey |>
+  group_by(Treat) |>
+  summarize(num_obs = n())
+```
+
+## Main Analysis
+
+Compare group means.
+
+```{r}
+survey |>
+  group_by(Treat) |>
+  summarize(mean_purchase = mean(purchase),
+            mean_helpful = mean(helpful),
+            mean_review_trust = mean(review_trust),
+            mean_reviewer_trust = mean(reviewer_trust),
+            mean_platform_trust = mean(platform_trust))
+```
+
+#### T-tests for differences in mean ratings.
+
+Make separate dataframes for each condition.
+
+```{r}
+treated <- survey |>
+  filter(Treat == 1)
+
+control <- survey |>
+  filter(Treat == 0)
+```
+
+Purchase intentions.
+
+```{r}
+t.test(x = treated$purchase, control$purchase, alternative = "greater")
+```
+
+Helpfulness.
+
+```{r}
+t.test(x = treated$helpful, control$helpful, alternative = "greater")
+```
+
+Review trust.
+
+```{r}
+t.test(x = treated$review_trust, control$review_trust, alternative = "greater")
+```
+
+Reviewer trust.
+
+```{r}
+t.test(x = treated$reviewer_trust, control$reviewer_trust, alternative = "greater")
+```
+
+Platform trust.
+
+```{r}
+t.test(x = treated$platform_trust, control$platform_trust, alternative = "greater")
+```
+
+#### Regressions for ratings based on treatment and the number of online purchases.
+
+Purchase regression.
+
+```{r}
+purchase_model <- lm(purchase ~ num_online_purchase + Treat, data = survey)
+summary(purchase_model)
+```
+
+Helpfulness regression.
+
+```{r}
+helpful_model <- lm(helpful ~ num_online_purchase + Treat, data = survey)
+summary(helpful_model)
+```
+
+Review trust regression.
+
+```{r}
+review_trust_model <- lm(review_trust ~ num_online_purchase + Treat, data = survey)
+summary(review_trust_model)
+```
+
+Reviewer trust regression.
+
+```{r}
+reviewer_trust_model <- lm(reviewer_trust ~ num_online_purchase + Treat, data = survey)
+summary(reviewer_trust_model)
+```
+
+Platform trust regression.
+
+```{r}
+platform_trust_model <- lm(platform_trust ~ num_online_purchase + Treat, data = survey)
+summary(platform_trust_model)
+```
