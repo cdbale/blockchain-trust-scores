@@ -1,6 +1,6 @@
 ---
 title: "Review Data Cleaning and PCA Modeling"
-format: docx
+format: html
 editor: visual
 ---
 
@@ -24,6 +24,7 @@ review <- read_csv("../Data/final_modeling_df.csv") # |> slice(1:1000000)
 ## Data Cleaning + Visualization
 
 Check the structure of the data. Check for duplicate user IDs based on `review_count`.
+
 ```{r}
 # Check data structure and identify reviewer vs review level variables
 cat("Dataset dimensions:", dim(review), "\n")
@@ -56,7 +57,7 @@ apply(review, 2, function(x) sum(is.na(x)))
 
 View some rows with missing values of product_attributes.
 
-```{r} 
+```{r}
 review |>
   filter(is.na(product_attributes)) |>
   head(10)
@@ -113,6 +114,7 @@ review <- review |>
 ```
 
 Check for missing values in the newly created variables.
+
 ```{r}
 apply(review, 2, function(x) sum(is.na(x)))
 ```
@@ -242,7 +244,8 @@ as_tibble(pca$x[, 1]) |>
   geom_density()
 ```
 
-Plot directional loadings for PC1 and PC2. 
+Plot directional loadings for PC1 and PC2.
+
 ```{r}
 # To visualize component loadings more clearly
 fviz_pca_var(pca, col.var = "contrib", 
@@ -266,11 +269,15 @@ loadings_df |>
   labs(title = "PCA Loadings for First 3 Components")
 ```
 
-View the first three eigenvectors.
+Interpret the first three eigenvectors.
 
--   E1: The only variable with a positive loading is `review_frequency`. Someone who leaves very frequent reviews will have a more positive value for PC1. However, the `review_count` and community indications of review quality, i.e., `useful_user`, `funny_user`, and `cool_user` all have large negative loadings. So, someone with a large number of reviews that have received favorable feedback from the community will have a large negative value for PC1, especially if their review frequency is low. This seems pretty interesting because PC1 on its own may be a decent differentiator of reviewer quality/trust - a bot that leaves a large number of reviews but does so with high frequency will not have a very negative value for PC1 especially if those bot reviews don't receive positive community feedback. Keep in mind that since we scaled the data, the values of the variables are standard deviations, which incorporate information for each user relative to other users, i.e., it's not just about having a high amount of positive community feedback or a high review count, it's about having high amounts relative to the rest of the user population.
+Interpretation of PC1:
 
-Use min-max scaling to transform PC1 values to 0 to 1 scale. 
+Interpretation of PC2:
+
+Interpretation of PC3:
+
+Use min-max scaling to transform PC1 values to 0 to 1 scale.
 
 ```{r}
 # Min-max scaling for PC1
