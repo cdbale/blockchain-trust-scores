@@ -50,6 +50,12 @@ survey <- survey |>
   filter(passed_manipulation_check == 1)
 ```
 
+```{r}
+survey |>
+  filter(QID12 != "4")
+```
+
+
 Check survey completion time. Remove participants who took less than 90 seconds to complete.
 
 ```{r}
