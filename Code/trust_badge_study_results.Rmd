@@ -50,12 +50,6 @@ survey <- survey |>
   filter(passed_manipulation_check == 1)
 ```
 
-```{r}
-survey |>
-  filter(QID12 != "4")
-```
-
-
 Check survey completion time. Remove participants who took less than 90 seconds to complete.
 
 ```{r}
@@ -135,7 +129,23 @@ Convert number of online purchases to numeric and age group to a factor.
 ```{r}
 survey <- survey |>
   mutate(num_online_purchase = as.numeric(factor(num_online_purchase, levels = c("1", "2", "3", "4", "5 or more"))),
-         age_group = factor(age_group, levels = c("18-24 years old", "25-34 years old", "35-44 years old", "45-54 years old", "55-64 years old", "65+ years old")))
+         age_group = factor(age_group, levels = c("Under 18", "18-24 years old", "25-34 years old", "35-44 years old", "45-54 years old", "55-64 years old", "65+ years old")))
+```
+
+Check for missing values in variables of interest.
+
+```{r}
+survey <- survey |>
+  select(purchase, helpful, review_trust, reviewer_trust, platform_trust, QID11, QID12, education, ethnicity, num_online_purchase, age_group, sex, income, Treat)
+
+lapply(survey, function(x) sum(is.na(x)))
+```
+
+One missing value in `age_group`. This also exists from the point the data is read in. We'll keep the observation since there is nothing that indicates it isn't valid.
+
+```{r}
+survey |>
+  filter(is.na(age_group))
 ```
 
 Check how many participants we have in each experimental condition.
@@ -144,6 +154,34 @@ Check how many participants we have in each experimental condition.
 survey |>
   group_by(Treat) |>
   summarize(num_obs = n())
+```
+
+## Demographic Analysis
+
+Online purchase breakdown.
+
+```{r}
+survey |>
+  group_by(Treat) |>
+  summarize(mean_online_purchase = mean(num_online_purchase))
+```
+
+Sex breakdown.
+
+```{r}
+survey |>
+  count(Treat, sex) |>
+  group_by(Treat) |>
+  mutate(prop = n/sum(n))
+```
+
+Age breakdown.
+
+```{r}
+survey |>
+  count(Treat, age_group) |>
+  group_by(Treat) |>
+  mutate(prop = n/sum(n))
 ```
 
 ## Main Analysis
