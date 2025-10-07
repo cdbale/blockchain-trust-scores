@@ -50,11 +50,12 @@ survey <- survey |>
   filter(passed_manipulation_check == 1)
 ```
 
-Check survey completion time. Remove participants who took less than 90 seconds to complete.
+Check survey completion time. Remove participants who took less than 90 seconds to complete, and remove one participant who had a missing value for age group.
 
 ```{r}
 survey <- survey |>
-  filter(`Duration (in seconds)` < 90)
+  mutate(Duration = as.numeric(`Duration (in seconds)`)) |>
+  filter(`Duration (in seconds)` > 90 | !is.na(Q46))
 ```
 
 Create numeric versions of Likert scale questions. We'll use the function below, and apply it to the `Q10_*` questions.
@@ -141,13 +142,6 @@ survey <- survey |>
 lapply(survey, function(x) sum(is.na(x)))
 ```
 
-One missing value in `age_group`. This also exists from the point the data is read in. We'll keep the observation since there is nothing that indicates it isn't valid.
-
-```{r}
-survey |>
-  filter(is.na(age_group))
-```
-
 Check how many participants we have in each experimental condition.
 
 ```{r}
@@ -172,7 +166,7 @@ Sex breakdown.
 survey |>
   count(Treat, sex) |>
   group_by(Treat) |>
-  mutate(prop = n/sum(n))
+  mutate(prop = round(n/sum(n), 2)*100)
 ```
 
 Age breakdown.
@@ -181,7 +175,7 @@ Age breakdown.
 survey |>
   count(Treat, age_group) |>
   group_by(Treat) |>
-  mutate(prop = n/sum(n))
+  mutate(prop = round(n/sum(n), 2)*100)
 ```
 
 ## Main Analysis
